@@ -388,7 +388,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -401,11 +401,38 @@
 
 <script>
     (function() {
+        // Убедиться что все библиотеки доступны в window
+        setTimeout(() => {
+            // Если docx приходит как module с default экспортом
+            if (!window.docx && window.__docx) {
+                window.docx = window.__docx;
+            }
+            if (!window.docx && window.DocxModule) {
+                window.docx = window.DocxModule;
+            }
+            if (!window.docx && window.Document && window.Packer) {
+                window.docx = {
+                    Document: window.Document,
+                    Packer: window.Packer,
+                    Paragraph: window.Paragraph,
+                    TextRun: window.TextRun,
+                    Table: window.Table,
+                    TableRow: window.TableRow,
+                    TableCell: window.TableCell
+                };
+            }
+        }, 100);
+    })();
+</script>
+
+<script>
+    (function() {
         // Проверка загрузки библиотек
         function checkLibraries() {
             const libs = {
                 'JSZip': window.JSZip,
-                'docx': window.docx,
+                'docx (Document)': window.docx && window.docx.Document ? window.docx.Document : null,
+                'docx (Packer)': window.docx && window.docx.Packer ? window.docx.Packer : null,
                 'html2pdf': window.html2pdf,
                 'XLSX': window.XLSX
             };
@@ -415,13 +442,14 @@
             });
             
             console.log('Статус библиотек:\n' + statuses.join('\n'));
+            console.log('Объект window.docx:', window.docx);
             
             const missing = Object.entries(libs)
                 .filter(([name, lib]) => !lib)
                 .map(([name]) => name);
             
             if (missing.length > 0) {
-                console.warn('Отсутствуют библиотеки:', missing.join(', '));
+                console.warn('Отсутствуют:', missing.join(', '));
             } else {
                 console.log('Все необходимые библиотеки загружены');
             }
@@ -432,34 +460,54 @@
 
         // Функция ожидания загрузки библиотек с повторными попытками и диагностикой
         async function waitForLibraries(required = []) {
-            const maxAttempts = 20;
-            const attemptDelay = 300;
+            const maxAttempts = 25;
+            const attemptDelay = 250;
             
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 let allLoaded = true;
                 const notLoaded = [];
                 
                 for (let libName of required) {
-                    if (!window[libName]) {
+                    let isLoaded = false;
+                    
+                    if (libName === 'docx') {
+                        // Специальная проверка для docx библиотеки
+                        isLoaded = window.docx && 
+                                   window.docx.Document && 
+                                   window.docx.Packer && 
+                                   window.docx.Paragraph && 
+                                   window.docx.TextRun;
+                    } else {
+                        isLoaded = !!window[libName];
+                    }
+                    
+                    if (!isLoaded) {
                         allLoaded = false;
                         notLoaded.push(libName);
                     }
                 }
                 
                 if (allLoaded) {
-                    console.log('Все библиотеки загружены успешно');
+                    console.log('Все требуемые библиотеки загружены успешно');
                     return true;
                 }
                 
-                if (attempt === 0) {
-                    console.warn(`Попытка ${attempt + 1}: Ожидание библиотек ${notLoaded.join(', ')}`);
+                if (attempt === 0 || attempt === 9) {
+                    console.warn(`Попытка ${attempt + 1}/${maxAttempts}: Ожидание ${notLoaded.join(', ')}`);
                 }
                 
                 await new Promise(resolve => setTimeout(resolve, attemptDelay));
             }
             
-            const notLoadedLibs = required.filter(lib => !window[lib]);
-            const errorMsg = `Не удалось загрузить библиотеки: ${notLoadedLibs.join(', ')}. Обновите страницу и попробуйте снова.`;
+            // Финальная диагностика перед ошибкой
+            const notLoadedLibs = required.filter(lib => {
+                if (lib === 'docx') {
+                    return !(window.docx && window.docx.Document && window.docx.Packer);
+                }
+                return !window[lib];
+            });
+            
+            const errorMsg = `Не удалось загрузить: ${notLoadedLibs.join(', ')}. Обновите страницу и проверьте интернет-соединение.`;
             console.error(errorMsg);
             throw new Error(errorMsg);
         }
@@ -643,7 +691,16 @@
                 }
             }
             
-            const { Document, Packer, Paragraph, TextRun } = window.docx;
+            // Безопасный доступ к компонентам docx
+            const Document = window.docx.Document;
+            const Packer = window.docx.Packer;
+            const Paragraph = window.docx.Paragraph;
+            const TextRun = window.docx.TextRun;
+            
+            if (!Document || !Packer || !Paragraph || !TextRun) {
+                throw new Error('Компоненты docx библиотеки не инициализированы');
+            }
+            
             const children = paragraphs.length ? 
                 paragraphs.map(p => new Paragraph({ children: [new TextRun(p)] })) :
                 [new Paragraph({ children: [new TextRun('Пустой документ')] })];
@@ -757,7 +814,15 @@
             await waitForLibraries(['docx']);
             
             const text = await file.text();
-            const { Document, Packer, Paragraph, TextRun } = window.docx;
+            // Безопасный доступ к компонентам docx
+            const Document = window.docx.Document;
+            const Packer = window.docx.Packer;
+            const Paragraph = window.docx.Paragraph;
+            const TextRun = window.docx.TextRun;
+            
+            if (!Document || !Packer || !Paragraph || !TextRun) {
+                throw new Error('Компоненты docx библиотеки не инициализированы');
+            }
             
             const lines = text.split('\n');
             const paragraphs = lines.map(line =>
@@ -772,7 +837,15 @@
             // Просто вернуть текстовую информацию в DOCX
             await waitForLibraries(['docx']);
             
-            const { Document, Packer, Paragraph, TextRun } = window.docx;
+            const Document = window.docx.Document;
+            const Packer = window.docx.Packer;
+            const Paragraph = window.docx.Paragraph;
+            const TextRun = window.docx.TextRun;
+            
+            if (!Document || !Packer || !Paragraph || !TextRun) {
+                throw new Error('Компоненты docx библиотеки не инициализированы');
+            }
+            
             const paragraph = new Paragraph({
                 children: [new TextRun(`PDF файл: ${file.name}\nДля полной конвертации требуется серверная обработка.`)]
             });
@@ -807,7 +880,17 @@
             await waitForLibraries(['docx', 'XLSX']);
             const text = await file.text();
             const lines = text.split('\n').map(line => line.split(','));
-            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell } = window.docx;
+            const Document = window.docx.Document;
+            const Packer = window.docx.Packer;
+            const Paragraph = window.docx.Paragraph;
+            const TextRun = window.docx.TextRun;
+            const Table = window.docx.Table;
+            const TableRow = window.docx.TableRow;
+            const TableCell = window.docx.TableCell;
+            
+            if (!Document || !Packer || !Table || !TableRow || !TableCell) {
+                throw new Error('Компоненты docx библиотеки не инициализированы');
+            }
             
             const rows = lines.map(line => new TableRow({
                 children: line.map(cell => new TableCell({ children: [new Paragraph(cell || '')] }))
@@ -824,7 +907,17 @@
             const wb = window.XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
             const lines = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
-            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell } = window.docx;
+            const Document = window.docx.Document;
+            const Packer = window.docx.Packer;
+            const Paragraph = window.docx.Paragraph;
+            const TextRun = window.docx.TextRun;
+            const Table = window.docx.Table;
+            const TableRow = window.docx.TableRow;
+            const TableCell = window.docx.TableCell;
+            
+            if (!Document || !Packer || !Table || !TableRow || !TableCell) {
+                throw new Error('Компоненты docx библиотеки не инициализированы');
+            }
             
             const rows = lines.map(line => new TableRow({
                 children: (Array.isArray(line) ? line : Object.values(line || {})).map(cell => 
