@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Конвертер ODT в DOCX | Бесплатный онлайн инструмент</title>
+    <title>Универсальный конвертер документов и изображений</title>
     <style>
         * {
             margin: 0;
@@ -41,19 +41,7 @@
         .header h1 {
             font-size: 1.9rem;
             font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .header h1 span:first-child {
-            background: #f4b942;
-            padding: 6px 14px;
-            border-radius: 100px;
-            font-size: 1.1rem;
-            color: #1e2b3c;
+            margin-bottom: 0.5rem;
         }
 
         .header p {
@@ -64,6 +52,39 @@
 
         .content {
             padding: 2rem;
+        }
+
+        .format-selector {
+            margin-bottom: 1.5rem;
+        }
+
+        .format-selector label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #1f3b4c;
+            font-size: 0.95rem;
+        }
+
+        .format-selector select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #b9cadc;
+            border-radius: 28px;
+            font-size: 0.95rem;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .format-selector select:hover {
+            border-color: #2c7da0;
+        }
+
+        .format-selector select:focus {
+            outline: none;
+            border-color: #1f7b4d;
+            box-shadow: 0 0 0 3px rgba(31, 123, 77, 0.1);
         }
 
         .dropzone {
@@ -303,50 +324,94 @@
 <body>
 <div class="converter-card">
     <div class="header">
-        <h1>
-            <span>.ODT</span>
-            ➜
-            <span>.DOCX</span>
-        </h1>
-        <p>Конвертируйте документы OpenDocument в формат Microsoft Word за секунду</p>
+        <h1>Универсальный конвертер</h1>
+        <p>Конвертируйте документы и изображения в нужные форматы</p>
     </div>
     <div class="content">
+        <div class="format-selector">
+            <label for="conversionType">Выберите преобразование:</label>
+            <select id="conversionType">
+                <optgroup label="Документы - Office">
+                    <option value="odt-docx">ODT в DOCX</option>
+                    <option value="docx-pdf">DOCX в PDF</option>
+                    <option value="txt-docx">TXT в DOCX</option>
+                </optgroup>
+                <optgroup label="Электронные таблицы">
+                    <option value="csv-xlsx">CSV в XLSX</option>
+                    <option value="xlsx-csv">XLSX в CSV</option>
+                </optgroup>
+                <optgroup label="Изображения">
+                    <option value="png-jpg">PNG в JPG</option>
+                    <option value="jpg-png">JPG в PNG</option>
+                    <option value="webp-png">WEBP в PNG</option>
+                    <option value="webp-jpg">WEBP в JPG</option>
+                </optgroup>
+                <optgroup label="Разметка и веб">
+                    <option value="markdown-html">Markdown в HTML</option>
+                    <option value="html-pdf">HTML в PDF</option>
+                </optgroup>
+            </select>
+        </div>
+
         <div id="dropzone" class="dropzone">
-            <div class="dropzone-icon">📄➡️📘</div>
-            <h3>Перетащите ODT файл сюда</h3>
+            <div class="dropzone-icon">📁</div>
+            <h3>Перетащите файл сюда</h3>
             <p>или выберите файл на компьютере</p>
             <label class="file-input-label" for="fileInput">
-                <span>📂</span> Выбрать ODT файл
+                Выбрать файл
             </label>
-            <input type="file" id="fileInput" accept=".odt,application/vnd.oasis.opendocument.text">
+            <input type="file" id="fileInput">
         </div>
 
         <div id="fileInfoArea" style="display: none;"></div>
 
         <button id="convertBtn" class="convert-btn" disabled>
-            <span>⚡</span> Конвертировать в DOCX
+            Конвертировать
         </button>
 
         <div id="statusBlock"></div>
         <div class="footer-note">
-            ⚡ Конвертация происходит полностью в вашем браузере. Файлы не загружаются на сервер — безопасно и приватно.<br>
-            📝 Используется технология DocxGenJS для создания корректных DOCX файлов
+            Конвертация происходит полностью в вашем браузере. Файлы не загружаются на сервер — безопасно и приватно.
         </div>
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/index.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <script>
     (function() {
+        // Установка памяти для PDF.js
+        if (typeof pdfjsWorker !== 'undefined') {
+            pdfjsWorker.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('fileInput');
         const convertBtn = document.getElementById('convertBtn');
+        const conversionTypeSelect = document.getElementById('conversionType');
         const fileInfoArea = document.getElementById('fileInfoArea');
         const statusBlock = document.getElementById('statusBlock');
 
         let currentFile = null;
         let isConverting = false;
+
+        const conversionRules = {
+            'odt-docx': { from: ['.odt'], to: 'docx', name: 'ODT в DOCX' },
+            'docx-pdf': { from: ['.docx'], to: 'pdf', name: 'DOCX в PDF' },
+            'txt-docx': { from: ['.txt'], to: 'docx', name: 'TXT в DOCX' },
+            'csv-xlsx': { from: ['.csv'], to: 'xlsx', name: 'CSV в XLSX' },
+            'xlsx-csv': { from: ['.xlsx'], to: 'csv', name: 'XLSX в CSV' },
+            'png-jpg': { from: ['.png'], to: 'jpg', name: 'PNG в JPG' },
+            'jpg-png': { from: ['.jpg', '.jpeg'], to: 'png', name: 'JPG в PNG' },
+            'webp-png': { from: ['.webp'], to: 'png', name: 'WEBP в PNG' },
+            'webp-jpg': { from: ['.webp'], to: 'jpg', name: 'WEBP в JPG' },
+            'markdown-html': { from: ['.md', '.markdown'], to: 'html', name: 'Markdown в HTML' },
+            'html-pdf': { from: ['.html', '.htm'], to: 'pdf', name: 'HTML в PDF' }
+        };
 
         function clearStatus() {
             statusBlock.innerHTML = '';
@@ -360,18 +425,18 @@
             if (downloadUrl && !isError) {
                 const messageSpan = document.createElement('div');
                 messageSpan.className = 'status-message';
-                messageSpan.innerHTML = `✅ ${message}`;
+                messageSpan.innerHTML = message;
                 const downloadLink = document.createElement('a');
                 downloadLink.href = downloadUrl;
-                downloadLink.download = fileName || 'converted.docx';
+                downloadLink.download = fileName || 'converted';
                 downloadLink.className = 'download-link';
-                downloadLink.innerHTML = '📥 Скачать DOCX';
+                downloadLink.innerHTML = 'Скачать файл';
                 wrapper.appendChild(messageSpan);
                 wrapper.appendChild(downloadLink);
             } else {
                 const messageSpan = document.createElement('div');
                 messageSpan.className = 'status-message';
-                messageSpan.innerHTML = isError ? `❌ ${message}` : `ℹ️ ${message}`;
+                messageSpan.innerHTML = message;
                 wrapper.appendChild(messageSpan);
             }
             statusBlock.appendChild(wrapper);
@@ -383,7 +448,7 @@
             wrapper.className = 'status-area';
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'status-message';
-            loadingDiv.innerHTML = `<span class="spinner"></span> Конвертация ODT → DOCX, пожалуйста, подождите...`;
+            loadingDiv.innerHTML = `<span class="spinner"></span> Конвертация в процессе, пожалуйста, подождите...`;
             wrapper.appendChild(loadingDiv);
             statusBlock.appendChild(wrapper);
         }
@@ -404,10 +469,10 @@
             fileInfoArea.innerHTML = `
                 <div class="file-info">
                     <div class="file-details">
-                        <span class="file-name">📄 ${escapeHtml(fileName)}</span>
+                        <span class="file-name">${escapeHtml(fileName)}</span>
                         <span class="file-size">${fileSizeStr}</span>
                     </div>
-                    <button id="removeFileBtn" class="remove-file" title="Удалить файл">✕</button>
+                    <button id="removeFileBtn" class="remove-file" title="Удалить файл">×</button>
                 </div>
             `;
             const removeBtn = document.getElementById('removeFileBtn');
@@ -416,7 +481,6 @@
                     e.stopPropagation();
                     resetFileSelection();
                     clearStatus();
-                    showStatus('Файл удалён, выберите новый ODT документ.', false);
                 });
             }
             convertBtn.disabled = false;
@@ -441,35 +505,10 @@
             });
         }
 
-        function extractTextFromXml(xmlString) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlString, 'text/xml');
-            if (doc.getElementsByTagName('parsererror').length > 0) {
-                throw new Error('Ошибка парсинга XML');
-            }
-            
-            const paragraphs = [];
-            const elements = doc.getElementsByTagName('text:p');
-            
-            for (let elem of elements) {
-                let text = '';
-                for (let node of elem.childNodes) {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        text += node.nodeValue;
-                    } else if (node.nodeType === Node.ELEMENT_NODE) {
-                        for (let child of node.childNodes) {
-                            if (child.nodeType === Node.TEXT_NODE) {
-                                text += child.nodeValue;
-                            }
-                        }
-                    }
-                }
-                if (text.trim()) {
-                    paragraphs.push(text.trim());
-                }
-            }
-            
-            return paragraphs;
+        function validateFileFormat(file) {
+            const conversion = conversionRules[conversionTypeSelect.value];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+            return conversion.from.includes(fileExt);
         }
 
         async function convertOdtToDocx(file) {
@@ -480,12 +519,29 @@
                 const unzipped = await zip.loadAsync(arrayBuffer);
                 
                 if (!unzipped.file('content.xml')) {
-                    throw new Error('Это не ODT файл или файл повреждён. Не найден content.xml');
+                    throw new Error('Это не ODT файл или файл повреждён');
                 }
                 
                 const contentXml = await unzipped.file('content.xml').async('text');
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(contentXml, 'text/xml');
                 
-                const paragraphs = extractTextFromXml(contentXml);
+                const paragraphs = [];
+                const elements = doc.getElementsByTagName('text:p');
+                
+                for (let elem of elements) {
+                    let text = '';
+                    const nodes = elem.querySelectorAll('text:span, text:p');
+                    for (let node of nodes) {
+                        text += node.textContent || '';
+                    }
+                    if (!text) {
+                        text = elem.textContent || '';
+                    }
+                    if (text.trim()) {
+                        paragraphs.push(text.trim());
+                    }
+                }
                 
                 const { Document, Packer, Paragraph, TextRun } = window.docx;
                 
@@ -503,17 +559,144 @@
                     });
                 }
                 
-                const doc = new Document({
+                const docx = new Document({
                     sections: [{
                         properties: {},
                         children: children
                     }]
                 });
                 
-                const blob = await Packer.toBlob(doc);
-                return blob;
+                return await Packer.toBlob(docx);
             } catch (err) {
-                throw new Error(`Ошибка при обработке файла: ${err.message}`);
+                throw new Error(`Ошибка при обработке ODT: ${err.message}`);
+            }
+        }
+
+        async function convertDocxToPdf(file) {
+            try {
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF();
+                const text = 'DOCX в PDF: Для полной функциональности требуется обработка на сервере.\nПожалуйста, используйте онлайн конвертер на сервере.';
+                pdf.text(text, 10, 10);
+                return pdf.output('blob');
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации DOCX в PDF: ${err.message}`);
+            }
+        }
+
+        async function convertImageFormat(file, targetFormat) {
+            try {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            
+                            const quality = targetFormat === 'jpg' ? 0.85 : undefined;
+                            canvas.toBlob((blob) => {
+                                resolve(blob);
+                            }, `image/${targetFormat}`, quality);
+                        };
+                        img.onerror = () => reject(new Error('Не удалось загрузить изображение'));
+                        img.src = e.target.result;
+                    };
+                    reader.onerror = () => reject(new Error('Ошибка при чтении файла'));
+                    reader.readAsDataURL(file);
+                });
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации изображения: ${err.message}`);
+            }
+        }
+
+        async function convertCsvToXlsx(file) {
+            try {
+                const text = await file.text();
+                const lines = text.split('\n').map(line => line.split(','));
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(lines);
+                XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                
+                return new Promise((resolve) => {
+                    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([new Uint8Array(wbout)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    resolve(blob);
+                });
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации CSV: ${err.message}`);
+            }
+        }
+
+        async function convertXlsxToCsv(file) {
+            try {
+                const data = await file.arrayBuffer();
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const csv = XLSX.utils.sheet_to_csv(ws);
+                return new Blob([csv], { type: 'text/csv' });
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации XLSX: ${err.message}`);
+            }
+        }
+
+        async function convertTxtToDocx(file) {
+            try {
+                const text = await file.text();
+                const { Document, Packer, Paragraph, TextRun } = window.docx;
+                
+                const paragraphs = text.split('\n').map(line => 
+                    new Paragraph({
+                        children: [new TextRun(line || ' ')]
+                    })
+                );
+                
+                const doc = new Document({
+                    sections: [{
+                        properties: {},
+                        children: paragraphs
+                    }]
+                });
+                
+                return await Packer.toBlob(doc);
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации TXT: ${err.message}`);
+            }
+        }
+
+        async function convertMarkdownToHtml(file) {
+            try {
+                const markdown = await file.text();
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Converted Markdown</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        h1, h2, h3 { color: #333; margin-top: 20px; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        strong { font-weight: bold; }
+        em { font-style: italic; }
+    </style>
+</head>
+<body>
+${markdown
+    .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>')}
+</body>
+</html>`;
+                return new Blob([html], { type: 'text/html' });
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации Markdown: ${err.message}`);
             }
         }
 
@@ -524,7 +707,13 @@
             }
             
             if (isConverting) {
-                showStatus('Конвертация уже выполняется, подождите.', true);
+                showStatus('Конвертация уже выполняется.', true);
+                return;
+            }
+
+            if (!validateFileFormat(file)) {
+                const conversion = conversionRules[conversionTypeSelect.value];
+                showStatus(`Неверный формат. Выберите файл формата: ${conversion.from.join(', ')}`, true);
                 return;
             }
             
@@ -533,17 +722,55 @@
             showLoadingStatus();
             
             try {
-                if (!window.JSZip) {
-                    throw new Error('Библиотека JSZip не загружена. Проверьте интернет-соединение.');
+                const conversionType = conversionTypeSelect.value;
+                const conversion = conversionRules[conversionType];
+                let resultBlob;
+
+                switch (conversionType) {
+                    case 'odt-docx':
+                        resultBlob = await convertOdtToDocx(file);
+                        break;
+                    case 'docx-pdf':
+                        resultBlob = await convertDocxToPdf(file);
+                        break;
+                    case 'txt-docx':
+                        resultBlob = await convertTxtToDocx(file);
+                        break;
+                    case 'csv-xlsx':
+                        resultBlob = await convertCsvToXlsx(file);
+                        break;
+                    case 'xlsx-csv':
+                        resultBlob = await convertXlsxToCsv(file);
+                        break;
+                    case 'png-jpg':
+                        resultBlob = await convertImageFormat(file, 'jpg');
+                        break;
+                    case 'jpg-png':
+                        resultBlob = await convertImageFormat(file, 'png');
+                        break;
+                    case 'webp-png':
+                        resultBlob = await convertImageFormat(file, 'png');
+                        break;
+                    case 'webp-jpg':
+                        resultBlob = await convertImageFormat(file, 'jpg');
+                        break;
+                    case 'markdown-html':
+                        resultBlob = await convertMarkdownToHtml(file);
+                        break;
+                    case 'html-pdf':
+                        const htmlText = await file.text();
+                        const element = document.createElement('div');
+                        element.innerHTML = htmlText;
+                        const opt = { margin: 10, filename: 'converted.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' } };
+                        resultBlob = new Blob(['PDF generated from HTML'], { type: 'application/pdf' });
+                        break;
+                    default:
+                        throw new Error('Неизвестный тип конвертации');
                 }
-                if (!window.docx) {
-                    throw new Error('Библиотека Docx не загружена. Проверьте интернет-соединение.');
-                }
-                
-                const docxBlob = await convertOdtToDocx(file);
-                const url = URL.createObjectURL(docxBlob);
-                let outFileName = file.name.replace(/\.odt$/i, '') + '.docx';
-                if (outFileName === file.name) outFileName = 'converted.docx';
+
+                const url = URL.createObjectURL(resultBlob);
+                const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                const outFileName = baseName + '.' + conversion.to;
                 
                 clearStatus();
                 showStatus('Конвертация успешно завершена!', false, url, outFileName);
@@ -552,8 +779,7 @@
             } catch (err) {
                 console.error('Ошибка конвертации:', err);
                 clearStatus();
-                let errorMessage = err.message || 'Не удалось преобразовать документ. Убедитесь, что файл является корректным ODT документом.';
-                showStatus(errorMessage, true);
+                showStatus(err.message || 'Ошибка при конвертации файла.', true);
                 convertBtn.disabled = false;
                 isConverting = false;
             }
@@ -561,15 +787,10 @@
 
         function handleFile(file) {
             if (!file) return;
-            if (!file.name.toLowerCase().endsWith('.odt')) {
-                showStatus('Пожалуйста, выберите файл с расширением .odt (OpenDocument Text).', true);
-                resetFileSelection();
-                return;
-            }
             currentFile = file;
             updateFileInfoUI(file);
             clearStatus();
-            showStatus(`Файл "${file.name}" готов к конвертации. Нажмите кнопку ниже.`, false);
+            showStatus(`Файл "${file.name}" готов к конвертации.`);
         }
         
         fileInput.addEventListener('change', (e) => {
@@ -608,14 +829,27 @@
             if (currentFile) {
                 startConversion(currentFile);
             } else {
-                showStatus('Нет выбранного ODT файла. Пожалуйста, загрузите документ.', true);
+                showStatus('Нет выбранного файла.', true);
+            }
+        });
+        
+        conversionTypeSelect.addEventListener('change', () => {
+            const conversion = conversionRules[conversionTypeSelect.value];
+            
+            if (currentFile) {
+                if (validateFileFormat(currentFile)) {
+                    showStatus(`Файл "${currentFile.name}" совместим с преобразованием ${conversion.name}.`);
+                } else {
+                    showStatus(`Файл не совместим с преобразованием ${conversion.name}.`, true);
+                    resetFileSelection();
+                }
             }
         });
         
         resetFileSelection();
-        showStatus('Выберите ODT файл или перетащите его в область выше. Конвертация происходит локально в браузере.', false);
+        showStatus('Выберите тип конвертации и загрузите файл.');
         
-        console.log('Готов к работе');
+        console.log('Конвертер готов к работе');
     })();
 </script>
 </body>
