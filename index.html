@@ -391,6 +391,14 @@
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script>
+    // Установить worker для PDF.js
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+</script>
 
 <script>
     // Глобальная обработка ошибок загрузки скриптов
@@ -434,7 +442,8 @@
                 'docx (Document)': window.docx && window.docx.Document ? window.docx.Document : null,
                 'docx (Packer)': window.docx && window.docx.Packer ? window.docx.Packer : null,
                 'html2pdf': window.html2pdf,
-                'XLSX': window.XLSX
+                'XLSX': window.XLSX,
+                'pdfjsLib': window.pdfjsLib
             };
             
             const statuses = Object.entries(libs).map(([name, lib]) => {
@@ -443,6 +452,7 @@
             
             console.log('Статус библиотек:\n' + statuses.join('\n'));
             console.log('Объект window.docx:', window.docx);
+            console.log('Объект window.pdfjsLib:', !!window.pdfjsLib);
             
             const missing = Object.entries(libs)
                 .filter(([name, lib]) => !lib)
@@ -477,6 +487,8 @@
                                    window.docx.Packer && 
                                    window.docx.Paragraph && 
                                    window.docx.TextRun;
+                    } else if (libName === 'pdfjsLib') {
+                        isLoaded = !!window.pdfjsLib;
                     } else {
                         isLoaded = !!window[libName];
                     }
@@ -503,6 +515,8 @@
             const notLoadedLibs = required.filter(lib => {
                 if (lib === 'docx') {
                     return !(window.docx && window.docx.Document && window.docx.Packer);
+                } else if (lib === 'pdfjsLib') {
+                    return !window.pdfjsLib;
                 }
                 return !window[lib];
             });
@@ -527,6 +541,7 @@
             'docx-odt': { from: ['.docx'], to: 'odt', name: 'DOCX в ODT' },
             'docx-pdf': { from: ['.docx'], to: 'pdf', name: 'DOCX в PDF' },
             'pdf-docx': { from: ['.pdf'], to: 'docx', name: 'PDF в DOCX' },
+            'pdf-txt': { from: ['.pdf'], to: 'txt', name: 'PDF в TXT' },
             'txt-docx': { from: ['.txt'], to: 'docx', name: 'TXT в DOCX' },
             'docx-txt': { from: ['.docx'], to: 'txt', name: 'DOCX в TXT' },
             'csv-xlsx': { from: ['.csv'], to: 'xlsx', name: 'CSV в XLSX' },
@@ -833,9 +848,45 @@
             return await Packer.toBlob(doc);
         }
 
+        // Функция извлечения текста из PDF
+        async function extractTextFromPdf(file) {
+            await waitForLibraries(['pdfjsLib']);
+            
+            if (!window.pdfjsLib) {
+                throw new Error('PDF.js библиотека не загружена');
+            }
+            
+            const arrBuffer = await file.arrayBuffer();
+            const pdf = await window.pdfjsLib.getDocument({ data: arrBuffer }).promise;
+            let fullText = '';
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str || '').join(' ');
+                fullText += pageText + '\n\n';
+            }
+            
+            return fullText.trim();
+        }
+
+        async function convertPdfToTxt(file) {
+            await waitForLibraries(['pdfjsLib']);
+            
+            try {
+                const text = await extractTextFromPdf(file);
+                if (!text || text.length === 0) {
+                    throw new Error('Не удалось извлечь текст из PDF');
+                }
+                return new Blob([text], { type: 'text/plain;charset=utf-8' });
+            } catch (err) {
+                console.error('PDF to TXT error:', err);
+                throw new Error('Ошибка при преобразовании PDF в TXT: ' + err.message);
+            }
+        }
+
         async function convertPdfToDocx(file) {
-            // Просто вернуть текстовую информацию в DOCX
-            await waitForLibraries(['docx']);
+            await waitForLibraries(['pdfjsLib', 'docx']);
             
             const Document = window.docx.Document;
             const Packer = window.docx.Packer;
@@ -846,12 +897,35 @@
                 throw new Error('Компоненты docx библиотеки не инициализированы');
             }
             
-            const paragraph = new Paragraph({
-                children: [new TextRun(`PDF файл: ${file.name}\nДля полной конвертации требуется серверная обработка.`)]
-            });
-            
-            const doc = new Document({ sections: [{ properties: {}, children: [paragraph] }] });
-            return await Packer.toBlob(doc);
+            try {
+                const pdfText = await extractTextFromPdf(file);
+                
+                if (!pdfText || pdfText.length === 0) {
+                    const paragraph = new Paragraph({
+                        children: [new TextRun(`PDF файл: ${file.name}\nТекст не найден или PDF пустой.`)]
+                    });
+                    const doc = new Document({ sections: [{ properties: {}, children: [paragraph] }] });
+                    return await Packer.toBlob(doc);
+                }
+                
+                // Разделить текст на абзацы и создать документ
+                const paragraphs = pdfText.split('\n\n')
+                    .filter(para => para.trim().length > 0)
+                    .map(para => new Paragraph({ 
+                        children: [new TextRun(para.trim())]
+                    }));
+                
+                const doc = new Document({ sections: [{ properties: {}, children: paragraphs }] });
+                return await Packer.toBlob(doc);
+            } catch (err) {
+                console.error('PDF to DOCX error:', err);
+                // Fallback: создать документ с информацией об ошибке
+                const paragraph = new Paragraph({
+                    children: [new TextRun(`PDF файл: ${file.name}\nОшибка при обработке: ${err.message}`)]
+                });
+                const doc = new Document({ sections: [{ properties: {}, children: [paragraph] }] });
+                return await Packer.toBlob(doc);
+            }
         }
 
         // ===== КОНВЕРТЕРЫ ТАБЛИЦ =====
@@ -859,9 +933,37 @@
         async function convertCsvToXlsx(file) {
             await waitForLibraries(['XLSX']);
             const text = await file.text();
-            const lines = text.split('\n').map(line => line.split(','));
+            // Убедиться что текст правильно декодирован в UTF-8
+            const lines = text.trim().split(/\r?\n/).filter(line => line.length > 0);
+            const data = lines.map(line => {
+                // Парсить CSV с учетом кавычек и специальных символов
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    const nextChar = line[i + 1];
+                    
+                    if (char === '"') {
+                        if (inQuotes && nextChar === '"') {
+                            current += '"';
+                            i++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim());
+                return result;
+            });
+            
             const wb = window.XLSX.utils.book_new();
-            const ws = window.XLSX.utils.aoa_to_sheet(lines);
+            const ws = window.XLSX.utils.aoa_to_sheet(data);
             window.XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
             const wbout = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
             return new Blob([new Uint8Array(wbout)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -872,8 +974,24 @@
             const data = await file.arrayBuffer();
             const wb = window.XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const csv = window.XLSX.utils.sheet_to_csv(ws);
-            return new Blob([csv], { type: 'text/csv;charset=utf-8' });
+            
+            // Получить данные в виде массива массивов для правильной обработки
+            const aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+            
+            // Преобразовать в CSV с правильной обработкой Cyrillic и специальных символов
+            const csvLines = aoa.map(row => {
+                return row.map(cell => {
+                    // Если ячейка содержит запятую, кавычки или переносы строк - обернуть в кавычки
+                    const cellStr = String(cell || '');
+                    if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                        return '"' + cellStr.replace(/"/g, '""') + '"';
+                    }
+                    return cellStr;
+                }).join(',');
+            }).join('\n');
+            
+            // Явно указать UTF-8 кодировку
+            return new Blob([csvLines], { type: 'text/csv;charset=utf-8' });
         }
 
         async function convertCsvToDocx(file) {
@@ -1091,6 +1209,7 @@ ${escapeHtml(text)}
                     'docx-odt': () => convertDocxToOdt(file),
                     'docx-pdf': () => convertDocxToPdf(file),
                     'pdf-docx': () => convertPdfToDocx(file),
+                    'pdf-txt': () => convertPdfToTxt(file),
                     'txt-docx': () => convertTxtToDocx(file),
                     'docx-txt': () => convertDocxToTxt(file),
                     'csv-xlsx': () => convertCsvToXlsx(file),
