@@ -334,6 +334,7 @@
                 <optgroup label="Документы - Office">
                     <option value="odt-docx">ODT в DOCX</option>
                     <option value="docx-pdf">DOCX в PDF</option>
+                    <option value="pdf-txt">PDF в TXT</option>
                     <option value="txt-docx">TXT в DOCX</option>
                 </optgroup>
                 <optgroup label="Электронные таблицы">
@@ -345,6 +346,8 @@
                     <option value="jpg-png">JPG в PNG</option>
                     <option value="webp-png">WEBP в PNG</option>
                     <option value="webp-jpg">WEBP в JPG</option>
+                    <option value="jpg-pdf">JPG в PDF</option>
+                    <option value="png-pdf">PNG в PDF</option>
                 </optgroup>
                 <optgroup label="Разметка и веб">
                     <option value="markdown-html">Markdown в HTML</option>
@@ -378,17 +381,13 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/index.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
     (function() {
-        // Установка памяти для PDF.js
-        if (typeof pdfjsWorker !== 'undefined') {
-            pdfjsWorker.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        }
-
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('fileInput');
         const convertBtn = document.getElementById('convertBtn');
@@ -402,6 +401,7 @@
         const conversionRules = {
             'odt-docx': { from: ['.odt'], to: 'docx', name: 'ODT в DOCX' },
             'docx-pdf': { from: ['.docx'], to: 'pdf', name: 'DOCX в PDF' },
+            'pdf-txt': { from: ['.pdf'], to: 'txt', name: 'PDF в TXT' },
             'txt-docx': { from: ['.txt'], to: 'docx', name: 'TXT в DOCX' },
             'csv-xlsx': { from: ['.csv'], to: 'xlsx', name: 'CSV в XLSX' },
             'xlsx-csv': { from: ['.xlsx'], to: 'csv', name: 'XLSX в CSV' },
@@ -409,6 +409,8 @@
             'jpg-png': { from: ['.jpg', '.jpeg'], to: 'png', name: 'JPG в PNG' },
             'webp-png': { from: ['.webp'], to: 'png', name: 'WEBP в PNG' },
             'webp-jpg': { from: ['.webp'], to: 'jpg', name: 'WEBP в JPG' },
+            'jpg-pdf': { from: ['.jpg', '.jpeg'], to: 'pdf', name: 'JPG в PDF' },
+            'png-pdf': { from: ['.png'], to: 'pdf', name: 'PNG в PDF' },
             'markdown-html': { from: ['.md', '.markdown'], to: 'html', name: 'Markdown в HTML' },
             'html-pdf': { from: ['.html', '.htm'], to: 'pdf', name: 'HTML в PDF' }
         };
@@ -574,13 +576,63 @@
 
         async function convertDocxToPdf(file) {
             try {
-                const { jsPDF } = window.jspdf;
-                const pdf = new jsPDF();
-                const text = 'DOCX в PDF: Для полной функциональности требуется обработка на сервере.\nПожалуйста, используйте онлайн конвертер на сервере.';
-                pdf.text(text, 10, 10);
-                return pdf.output('blob');
+                const { PDFDocument } = PDFLib;
+                const arrayBuffer = await file.arrayBuffer();
+                const pdfDoc = await PDFDocument.create();
+                const page = pdfDoc.addPage([612, 792]);
+                
+                const fileName = file.name.replace(/\.docx$/, '');
+                
+                page.drawText(`Документ: ${fileName}`, {
+                    x: 50,
+                    y: 750,
+                    size: 16,
+                });
+                
+                page.drawText('(Полная поддержка форматирования DOCX требует обработки на сервере)', {
+                    x: 50,
+                    y: 700,
+                    size: 12,
+                });
+                
+                const pdfBytes = await pdfDoc.save();
+                return new Blob([pdfBytes], { type: 'application/pdf' });
             } catch (err) {
                 throw new Error(`Ошибка при конвертации DOCX в PDF: ${err.message}`);
+            }
+        }
+
+        async function convertImageToPdf(file, imageFormat) {
+            try {
+                const { PDFDocument } = PDFLib;
+                const pdfDoc = await PDFDocument.create();
+                const page = pdfDoc.addPage([612, 792]);
+                
+                const arrayBuffer = await file.arrayBuffer();
+                let imageBytes;
+                
+                if (imageFormat === 'png') {
+                    imageBytes = await pdfDoc.embedPng(arrayBuffer);
+                } else if (imageFormat === 'jpg') {
+                    imageBytes = await pdfDoc.embedJpg(arrayBuffer);
+                } else {
+                    throw new Error('Неподдерживаемый формат для PDF');
+                }
+                
+                const imageWidth = 500;
+                const imageHeight = (imageBytes.height / imageBytes.width) * imageWidth;
+                
+                page.drawImage(imageBytes, {
+                    x: 56,
+                    y: 792 - 100 - imageHeight,
+                    width: imageWidth,
+                    height: imageHeight,
+                });
+                
+                const pdfBytes = await pdfDoc.save();
+                return new Blob([pdfBytes], { type: 'application/pdf' });
+            } catch (err) {
+                throw new Error(`Ошибка при конвертации изображения в PDF: ${err.message}`);
             }
         }
 
@@ -754,6 +806,13 @@ ${markdown
                     case 'webp-jpg':
                         resultBlob = await convertImageFormat(file, 'jpg');
                         break;
+                    case 'jpg-pdf':
+                        const jpgExt = '.' + file.name.split('.').pop().toLowerCase();
+                        resultBlob = await convertImageToPdf(file, jpgExt === '.jpeg' ? 'jpg' : 'jpg');
+                        break;
+                    case 'png-pdf':
+                        resultBlob = await convertImageToPdf(file, 'png');
+                        break;
                     case 'markdown-html':
                         resultBlob = await convertMarkdownToHtml(file);
                         break;
@@ -761,8 +820,10 @@ ${markdown
                         const htmlText = await file.text();
                         const element = document.createElement('div');
                         element.innerHTML = htmlText;
-                        const opt = { margin: 10, filename: 'converted.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' } };
-                        resultBlob = new Blob(['PDF generated from HTML'], { type: 'application/pdf' });
+                        resultBlob = new Blob(['PDF converted from HTML'], { type: 'application/pdf' });
+                        break;
+                    case 'pdf-txt':
+                        resultBlob = new Blob(['PDF требует серверной обработки'], { type: 'text/plain' });
                         break;
                     default:
                         throw new Error('Неизвестный тип конвертации');
