@@ -409,13 +409,65 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <!-- ffmpeg.wasm - официальная WebAssembly версия FFmpeg (работает во всех браузерах) -->
 <!-- Используем синхронную загрузку чтобы убедиться что загружена ДО её использования -->
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js" crossorigin="anonymous"></script>
+
+<!-- Fallback: если первый CDN не сработал, пробуем второй -->
+<script>
+    // Инициализация флагов загрузки ПЕРЕД любыми загрузками
+    window.ffmpegLoaded = false;
+    window.ffmpegLoadFailed = false;
+    
+    // Проверка что FFmpeg загружена с основного CDN
+    if (!window.FFmpeg) {
+        console.warn('[FFmpeg] ⏳[Fallback1] Основной CDN (jsdelivr) не загружен за первую попытку. Пробуем unpkg...');
+        var altScript = document.createElement('script');
+        altScript.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js';
+        altScript.crossOrigin = 'anonymous';
+        altScript.onload = function() {
+            console.log('[FFmpeg] ✓[Fallback1] Альтернативный CDN (unpkg) загружен успешно');
+            window.ffmpegLoaded = true;
+        };
+        altScript.onerror = function() {
+            console.warn('[FFmpeg] ❌[Fallback1] unpkg также не загружен. Пробуем esm.sh...');
+            // Третий fallback
+            var thirdScript = document.createElement('script');
+            thirdScript.src = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
+            thirdScript.crossOrigin = 'anonymous';
+            thirdScript.type = 'module';
+            thirdScript.onload = function() {
+                console.log('[FFmpeg] ✓[Fallback2] esm.sh загружен успешно');
+                window.ffmpegLoaded = true;
+            };
+            thirdScript.onerror = function() {
+                console.error('[FFmpeg] ❌❌❌[Fallback2] ВСЕ CDN НЕ ЗАГРУЖЕНЫ - сеть заблокирована (ИСПОЛЬЗУЙТЕ VPN)');
+                window.ffmpegLoadFailed = true;
+            };
+            document.head.appendChild(thirdScript);
+        };
+        document.head.appendChild(altScript);
+    } else {
+        console.log('[FFmpeg] ✓[Initial] FFmpeg скрипт загружен успешно с основного CDN (jsdelivr)');
+        window.ffmpegLoaded = true;
+    }
+</script>
 
 <script>
     // Установить worker для PDF.js
     if (typeof pdfjsLib !== 'undefined') {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
+    
+    // СРАЗУ после загрузки скриптов - вывести диагностику
+    console.log('='.repeat(60));
+    console.log('🔍 FFmpeg загрузка началась');
+    console.log('='.repeat(60));
+    console.log('[0ms] Проверка наличия window.FFmpeg:', typeof window.FFmpeg !== 'undefined' ? '✓ ЗАГРУЖЕНА' : '⏳ Загружается или блокирована');
+    console.log('[0ms] Проверка WebAssembly:', typeof WebAssembly !== 'undefined' ? '✓ Поддерживается' : '✗ НЕ поддерживается');
+    
+    // Проверить что FFmpeg загружается через fallback через 1 сек
+    setTimeout(function() {
+        console.log('[1000ms] Проверка после 1 секунды:', typeof window.FFmpeg !== 'undefined' ? '✓ ЗАГРУЖЕНА' : '⏳ Все еще загружается...');
+    }, 1000);
 </script>
 
 <script>
@@ -473,6 +525,20 @@
      * @returns {Promise<Object>} FFmpeg экземпляр
      */
     async function getFFmpegInstance() {
+        // Сначала подождать пока FFmpeg загрузится через fallback если нужно
+        console.log('[FFmpeg] ⏳ Ожидание загрузки FFmpeg скрипта (может быть через fallback CDN)...');
+        let attempts = 0;
+        while (!window.FFmpeg && !window.ffmpegLoadFailed && attempts < 60) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+        }
+        
+        // Проверка если ВСЕ CDN заблокированы
+        if (window.ffmpegLoadFailed || (!window.FFmpeg && attempts >= 60)) {
+            console.error('[FFmpeg] ❌ КРИТИЧЕСКАЯ ОШИБКА: FFmpeg скрипт не загружен с ни одного CDN');
+            throw new Error('FFmpeg скрипт не загружен. ВСЕ CDN заблокированы. Используйте VPN!');
+        }
+        
         // Если уже загружена - вернуть сразу
         if (window.ffmpegInstance && window.ffmpegReady) {
             console.log('[FFmpeg] ✓ Используется кэшированный экземпляр');
@@ -703,6 +769,21 @@
             console.log('📋 ДИАГНОСТИКА FFmpeg.wasm');
             console.log('='.repeat(60));
             
+            // Проверка загрузки скрипта FFmpeg
+            console.log('\n[FFmpeg Скрипт Загрузка]');
+            console.log('  Скрипт загружен?', !!window.ffmpegLoaded);
+            console.log('  window.FFmpeg доступна?', typeof window.FFmpeg !== 'undefined');
+            console.log('  Fallback использовался?', typeof window.ffmpegLoaded !== 'undefined');
+            console.log('  Все CDN заблокированы?', !!window.ffmpegLoadFailed);
+            
+            if (window.ffmpegLoadFailed) {
+                console.error('  ❌ ВСЕ CDN ЗАБЛОКИРОВАНЫ - ИСПОЛЬЗУЙТЕ VPN!');
+            } else if (!window.FFmpeg && !window.ffmpegLoaded) {
+                console.warn('  ⏳ Скрипт еще загружается (ожидание fallback CDN)...');
+            } else if (window.FFmpeg) {
+                console.log('  ✓ Скрипт загружен полностью');
+            }
+            
             // Проверка WebAssembly
             console.log('\n[WebAssembly]');
             console.log('  Поддерживается:', typeof WebAssembly !== 'undefined');
@@ -712,7 +793,7 @@
             }
             
             // Проверка FFmpeg скрипта
-            console.log('\n[FFmpeg Скрипт]');
+            console.log('\n[FFmpeg Модуль]');
             console.log('  window.FFmpeg доступна:', typeof window.FFmpeg !== 'undefined');
             if (typeof window.FFmpeg !== 'undefined') {
                 console.log('  window.FFmpeg.FFmpeg:', typeof window.FFmpeg.FFmpeg !== 'undefined');
@@ -737,13 +818,20 @@
             }
             
             // Статус инициализации
-            console.log('\n[Статус]');
+            console.log('\n[FFmpeg Инстанс]');
             console.log('  Инстанс существует:', !!window.ffmpegInstance);
             console.log('  Инстанс готов:', !!window.ffmpegReady);
             console.log('  Загружается:', !!window.ffmpegLoading);
             
             console.log('\n' + '='.repeat(60));
-            console.log('Если FFmpeg не работает в России - используйте VPN!');
+            if (!window.FFmpeg && !window.ffmpegLoadFailed) {
+                console.warn('⏳ FFmpeg еще загружается через fallback CDN...');
+            } else if (window.FFmpeg) {
+                console.log('✓ FFmpeg готова к конвертации!');
+            } else {
+                console.error('❌ ВСЕ CDN ЗАБЛОКИРОВАНЫ! Используйте VPN');
+                console.error('Справка: README-FFmpeg-RUSSIA.txt, VPN-SPRAVKA-RUSSIA.md');
+            }
             console.log('='.repeat(60) + '\n');
         }
         
