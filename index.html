@@ -594,89 +594,122 @@
      * Загружает FFmpeg WebAssembly - работает в Chrome, Firefox, Safari, Edge
      * @returns {Promise<Object>} FFmpeg экземпляр
      */
-    // Глобальный FFmpeg экземпляр (синглтон)
+    // Глобальный FFmpeg кэш
     let ffmpegInstance = null;
     let ffmpegReady = false;
     let ffmpegInitPromise = null;
     
     /**
-     * Инициализировать FFmpeg один раз
+     * Инициализировать FFmpeg
      */
     async function initFFmpeg() {
-        // Если уже инициализируется - дождаться результата
+        // Если уже инициализируется - пождать результата
         if (ffmpegInitPromise) {
+            console.log('[FFmpeg] Уже инициализируется, ждём...');
             return ffmpegInitPromise;
         }
         
         // Если уже готова - вернуть сразу
         if (ffmpegReady && ffmpegInstance) {
+            console.log('[FFmpeg] ✓ Уже готова, возвращаю кэш');
             return ffmpegInstance;
         }
         
-        // Создать промис инициализации
+        // Создать и вернуть обещание инициализации
         ffmpegInitPromise = (async () => {
+            console.log('[FFmpeg] Начинаю инициализацию...');
+            
+            // Проверка 1: Протокол не должен быть file://
+            if (window.location.protocol === 'file:') {
+                const msg = 'ОШИБКА: Открыт файл напрямую (file://). Нужен HTTP сервер!\n\n' +
+                    'Запустите один из этих командов:\n' +
+                    '1) Python:  python -m http.server 8000\n' +
+                    '2) Node:    npx serve .\n\n' +
+                    'Потом откройте: http://localhost:8000/index.html';
+                console.error('[FFmpeg] ❌', msg);
+                throw new Error(msg);
+            }
+            
+            // Проверка 2: window.FFmpeg должна быть загружена
+            if (!window.FFmpeg) {
+                console.error('[FFmpeg] ❌ window.FFmpeg не найдена');
+                throw new Error('FFmpeg скрипт не загружен. Проверьте интернет соединение.');
+            }
+            
+            console.log('[FFmpeg] ✓ window.FFmpeg загружена');
+            
+            // Проверка 3: Получить класс FFmpeg
+            const { FFmpeg } = window.FFmpeg;
+            if (!FFmpeg) {
+                console.error('[FFmpeg] ❌ FFmpeg класс не найдена в window.FFmpeg');
+                throw new Error('FFmpeg класс недоступен');
+            }
+            
+            console.log('[FFmpeg] ✓ FFmpeg класс найдена');
+            
+            // Шаг 1: Создать экземпляр
+            console.log('[FFmpeg] Создаю экземпляр FFmpeg()...');
+            ffmpegInstance = new FFmpeg();
+            console.log('[FFmpeg] ✓ Экземпляр создан');
+            
+            // Шаг 2: Загрузить WASM ядро с таймаутом 50 секунд
+            console.log('[FFmpeg] Загружаю WASM ядро (таймаут: 50сек)...');
+            
             try {
-                console.log('[FFmpeg] Инициализация началась...');
+                const loadPromise = ffmpegInstance.load();
                 
-                // Проверить что FFmpeg библиотека загружена
-                if (!window.FFmpeg) {
-                    throw new Error('FFmpeg библиотека не загружена (window.FFmpeg не найдена)');
-                }
-                
-                const { FFmpeg } = window.FFmpeg;
-                if (!FFmpeg) {
-                    throw new Error('Класс FFmpeg не найден в window.FFmpeg');
-                }
-                
-                // Создать новый экземпляр FFmpeg
-                console.log('[FFmpeg] Создание нового экземпляра...');
-                ffmpegInstance = new FFmpeg();
-                
-                // Загрузить WASM (таймаут 45 секунд)
-                console.log('[FFmpeg] Загрузка WASM ядра (timeout: 45сек)...');
-                
-                const loadTimeout = new Promise((_, reject) => {
+                const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => {
-                        reject(new Error('Timeout: FFmpeg не загружена за 45 секунд'));
-                    }, 45000);
+                        reject(new Error('Таймаут загрузки WASM (50сек)'));
+                    }, 50000);
                 });
                 
-                await Promise.race([ffmpegInstance.load(), loadTimeout]);
-                
+                // Ждём что первое завершится (либо загрузка, либо таймаут)
+                await Promise.race([loadPromise, timeoutPromise]);
                 console.log('[FFmpeg] ✓ WASM успешно загружена');
                 
-                // Проверить что FS доступен
-                if (!ffmpegInstance.FS) {
-                    throw new Error('FFmpeg готова но FS недоступна');
-                }
-                
-                ffmpegReady = true;
-                console.log('[FFmpeg] ✓ FFmpeg полностью готова!');
-                return ffmpegInstance;
-                
-            } catch (error) {
-                console.error('[FFmpeg] ❌ Ошибка инициализации:', error.message);
-                ffmpegInitPromise = null; // Сбросить чтобы переторопить при следующем вызове
-                throw error;
+            } catch (loadErr) {
+                console.error('[FFmpeg] ❌ Ошибка загрузки WASM:', loadErr.message);
+                throw loadErr;
             }
+            
+            // Шаг 3: Проверить что FS работает
+            console.log('[FFmpeg] Проверяю ffmpeg.FS...');
+            if (!ffmpegInstance.FS) {
+                console.error('[FFmpeg] ❌ ffmpeg.FS не доступна');
+                throw new Error('FFmpeg загружена но FS не доступна');
+            }
+            console.log('[FFmpeg] ✓ ffmpeg.FS доступна');
+            
+            // Готовы!
+            ffmpegReady = true;
+            console.log('[FFmpeg] ✅ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА УСПЕШНО');
+            
+            return ffmpegInstance;
+            
         })();
         
-        return ffmpegInitPromise;
-    }
-    
-    /**
-     * Получить FFmpeg (даст ошибку если не готова)
-     */
-    async function getFFmpegInstance() {
-        if (!ffmpegReady) {
-            await initFFmpeg();
-        }
-        
-        if (!ffmpegInstance) {
-            throw new Error('FFmpeg инициализация провалилась');
+        try {
+            await ffmpegInitPromise;
+        } catch (error) {
+            console.error('[FFmpeg] ❌ ИНИЦИАЛИЗАЦИЯ ОШИБКА:', error.message);
+            ffmpegInitPromise = null; // Сбросить чтобы можно было пересоздавать
+            throw error;
         }
         
         return ffmpegInstance;
+    }
+    
+    /**
+     * Получить FFmpeg (инициализирует если нужно)
+     */
+    async function getFFmpegInstance() {
+        if (ffmpegReady && ffmpegInstance) {
+            return ffmpegInstance;
+        }
+        
+        // Инициализировать
+        return await initFFmpeg();
     }
     
     /**
