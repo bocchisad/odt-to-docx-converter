@@ -336,6 +336,7 @@
                     <option value="docx-odt">DOCX в ODT</option>
                     <option value="docx-pdf">DOCX в PDF</option>
                     <option value="pdf-docx">PDF в DOCX (текст)</option>
+                    <option value="pdf-txt">PDF в TXT</option>
                     <option value="txt-docx">TXT в DOCX</option>
                     <option value="docx-txt">DOCX в TXT</option>
                 </optgroup>
@@ -856,18 +857,48 @@
                 throw new Error('PDF.js библиотека не загружена');
             }
             
-            const arrBuffer = await file.arrayBuffer();
-            const pdf = await window.pdfjsLib.getDocument({ data: arrBuffer }).promise;
-            let fullText = '';
-            
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str || '').join(' ');
-                fullText += pageText + '\n\n';
+            try {
+                const arrBuffer = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ 
+                    data: arrBuffer,
+                    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                    cMapPacked: true
+                }).promise;
+                
+                let fullText = '';
+                let hasContent = false;
+                
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    try {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        
+                        if (textContent && textContent.items && textContent.items.length > 0) {
+                            hasContent = true;
+                            const pageText = textContent.items
+                                .map(item => item.str || '')
+                                .join(' ')
+                                .trim();
+                            
+                            if (pageText) {
+                                fullText += pageText + '\n\n';
+                            }
+                        }
+                    } catch (pageErr) {
+                        console.warn(`Ошибка обработки страницы ${i}:`, pageErr);
+                        // Продолжить обработку остальных страниц
+                    }
+                }
+                
+                if (!hasContent) {
+                    throw new Error('PDF файл не содержит извлекаемого текста или является изображением');
+                }
+                
+                return fullText.trim();
+            } catch (err) {
+                console.error('extractTextFromPdf error:', err);
+                throw err;
             }
-            
-            return fullText.trim();
         }
 
         async function convertPdfToTxt(file) {
@@ -901,11 +932,7 @@
                 const pdfText = await extractTextFromPdf(file);
                 
                 if (!pdfText || pdfText.length === 0) {
-                    const paragraph = new Paragraph({
-                        children: [new TextRun(`PDF файл: ${file.name}\nТекст не найден или PDF пустой.`)]
-                    });
-                    const doc = new Document({ sections: [{ properties: {}, children: [paragraph] }] });
-                    return await Packer.toBlob(doc);
+                    throw new Error('Не удалось извлечь текст из PDF файла');
                 }
                 
                 // Разделить текст на абзацы и создать документ
@@ -915,15 +942,21 @@
                         children: [new TextRun(para.trim())]
                     }));
                 
+                if (paragraphs.length === 0) {
+                    paragraphs.push(new Paragraph({ 
+                        children: [new TextRun(`PDF файл: ${file.name}\nТекст не найден или PDF пустой.`)]
+                    }));
+                }
+                
                 const doc = new Document({ sections: [{ properties: {}, children: paragraphs }] });
                 return await Packer.toBlob(doc);
             } catch (err) {
                 console.error('PDF to DOCX error:', err);
                 // Fallback: создать документ с информацией об ошибке
-                const paragraph = new Paragraph({
-                    children: [new TextRun(`PDF файл: ${file.name}\nОшибка при обработке: ${err.message}`)]
+                const errorParagraph = new Paragraph({
+                    children: [new TextRun(`PDF файл: ${file.name}\n\nОшибка при обработке: ${err.message}`)]
                 });
-                const doc = new Document({ sections: [{ properties: {}, children: [paragraph] }] });
+                const doc = new Document({ sections: [{ properties: {}, children: [errorParagraph] }] });
                 return await Packer.toBlob(doc);
             }
         }
@@ -990,8 +1023,12 @@
                 }).join(',');
             }).join('\n');
             
+            // Добавить BOM для корректного отображения UTF-8 в Excel и других приложениях
+            const bom = '\uFEFF';
+            const csvWithBom = bom + csvLines;
+            
             // Явно указать UTF-8 кодировку
-            return new Blob([csvLines], { type: 'text/csv;charset=utf-8' });
+            return new Blob([csvWithBom], { type: 'text/csv;charset=utf-8' });
         }
 
         async function convertCsvToDocx(file) {
