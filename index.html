@@ -429,10 +429,12 @@
     // CDN источники для загрузки ffmpeg-core
     const FFMPEG_CORE_URLS = [
         {
-            core: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/ffmpeg-core',
+            coreJS: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/ffmpeg-core.js',
+            coreWasm: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/ffmpeg-core.wasm',
         },
         {
-            core: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/ffmpeg-core',
+            coreJS: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/ffmpeg-core.js',
+            coreWasm: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/ffmpeg-core.wasm',
         }
     ];
     
@@ -494,15 +496,15 @@
             
             for (let source of FFMPEG_CORE_URLS) {
                 try {
-                    console.log(`[FFmpeg] 📍 Источник: ${source.core}`);
+                    console.log(`[FFmpeg] 📍 Источник: ${source.coreJS}`);
                     
                     // Загрузить ffmpeg-core с явной конфигурацией
                     await ffmpeg.load({
-                        coreURL: source.core,
-                        wasmURL: source.core
+                        coreURL: source.coreJS,
+                        wasmURL: source.coreWasm
                     });
                     
-                    console.log(`[FFmpeg] ✓ Успешно загружена с: ${source.core}`);
+                    console.log(`[FFmpeg] ✓ Успешно загружена с: ${source.coreJS}`);
                     loadedSuccessfully = true;
                     break;
                 } catch (err) {
@@ -1480,8 +1482,9 @@ ${escapeHtml(text)}
                 let outputData;
                 
                 try {
-                    outputData = ffmpeg.FS('readFile', outputName);
-                    outputData = new Uint8Array(outputData);
+                    const outputDataArray = ffmpeg.FS('readFile', outputName);
+                    // outputData это уже Uint8Array, просто используем его напрямую
+                    outputData = outputDataArray;
                 } catch (readErr) {
                     // Отладка - просмотреть доступные файлы
                     console.error('❌ Ошибка чтения выходного файла:', readErr);
