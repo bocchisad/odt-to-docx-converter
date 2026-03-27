@@ -675,6 +675,7 @@
         }
         
         window.ffmpegLoading = true;
+        console.log('[FFmpeg] 🔧 НАЧАЛО инициализации FFmpeg (window.ffmpegLoading = true)');
         
         try {
             // КРИТИЧЕСКАЯ ПРОВЕРКА: загружена ли ffmpeg.wasm библиотека
@@ -724,18 +725,23 @@
                     
                     // Загрузить ffmpeg-core с явной конфигурацией + TIMEOUT
                     try {
+                        console.log(`[FFmpeg] ⏳ Вызов ffmpeg.load() для ${source.name}...`);
                         const loadPromise = ffmpeg.load({
                             coreURL: source.coreJS,
                             wasmURL: source.coreWasm
                         });
+                        
+                        console.log(`[FFmpeg] ⏳ Обещание создано, ждём результата...`);
                         
                         // Ждать с таймаутом 20 секунд
                         const timeoutPromise = new Promise((_, reject) => 
                             setTimeout(() => reject(new Error('Таймаут загрузки ffmpeg-core (20сек)')), 20000)
                         );
                         
+                        console.log(`[FFmpeg] ⏳ Начало гонки (race) между loadPromise и таймаутом...`);
                         await Promise.race([loadPromise, timeoutPromise]);
                         
+                        console.log(`[FFmpeg] ✓ ffmpeg.load() успешно завершилась для ${source.name}`);
                         console.log(`[FFmpeg] ✓ Успешно загружена с: ${source.name}`);
                         loadedSuccessfully = true;
                         break;
@@ -754,8 +760,9 @@
                 console.warn('[FFmpeg] ⚠️ Не удалось загрузить через явные URLs. Пробуем загрузить без явной конфигурации...');
                 
                 try {
-                    // Может быть ffmpeg-core загружен автоматически или доступен через глобальный контекст
+                    console.log('[FFmpeg] ⏳ Вызов ffmpeg.load() БЕЗ параметров...');
                     await ffmpeg.load();
+                    console.log('[FFmpeg] ✓ ffmpeg.load() завершилась успешно (автоматическая конфигурация)');
                     loadedSuccessfully = true;
                     console.log('[FFmpeg] ✓ FFmpeg загружена с автоматической конфигурацией');
                 } catch (autoLoadErr) {
@@ -770,20 +777,28 @@
             }
             
             // Проверить что FFmpeg готова
+            console.log('[FFmpeg] 🔍 Проверка ffmpeg.FS после успешной загрузки...');
             if (!ffmpeg.FS) {
                 throw new Error('FFmpeg загружена но FS недоступна');
             }
             
+            console.log('[FFmpeg] ✅ ffmpeg.FS доступна!');
+            
             // Кэшировать экземпляр
+            console.log('[FFmpeg] 💾 Кэширование экземпляра в window переменные...');
             window.ffmpegInstance = ffmpeg;
             window.ffmpegReady = true;
             window.FFmpegFetchFile = fetchFile;
             window.ffmpegLoading = false;
             
+            console.log('[FFmpeg] ✅ Флаги установлены: ffmpegReady=true, ffmpegLoading=false');
             console.log('✅ [FFmpeg] ffmpeg.wasm полностью готова к конвертации');
             return ffmpeg;
             
         } catch (err) {
+            console.error('[FFmpeg] ❌ РЕЗУЛЬТАТ: Ошибка инициализации FFmpeg');
+            console.error('[FFmpeg] Ошибка:', err.message);
+            console.error('[FFmpeg] Стэк:', err.stack);
             window.ffmpegReady = false;
             window.ffmpegInstance = null;
             window.ffmpegLoading = false;
