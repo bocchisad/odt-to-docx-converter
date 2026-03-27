@@ -407,10 +407,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<!-- FFmpeg.js библиотека - загружается как UMD модуль (как docx) -->
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.13.0/dist/ffmpeg.min.js"></script>
-<!-- FFmpeg Core (симуляция WASM через fakefs для браузера) -->
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.13.0/dist/ffmpeg-core.js"></script>
+<!-- ffmpeg.wasm - официальная WebAssembly версия FFmpeg (работает во всех браузерах) -->
+<script async src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js"></script>
 
 <script>
     // Установить worker для PDF.js
@@ -421,24 +419,26 @@
 
 <script>
     /**
-     * Production-grade FFmpeg инициализация с multiple fallback CDNs
-     * Работает с FFmpeg.js загруженным как UMD модуль
+     * ffmpeg.wasm инициализация - работает во всех современных браузерах
+     * Версия 0.12.10 - стабильная и проверенная
      */
     window.ffmpegInstance = null;
     window.ffmpegReady = false;
     window.ffmpegLoading = false;
     
-    // Несколько CDN источников для fallback (ядро)
+    // CDN источники для загрузки ffmpeg-core
     const FFMPEG_CORE_URLS = [
-        'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.13.0/dist/umd',
-        'https://unpkg.com/@ffmpeg/core@0.13.0/dist/umd',
-        'https://cdnjs.cloudflare.com/ajax/libs/@ffmpeg/core/0.13.0'
+        {
+            core: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/ffmpeg-core',
+        },
+        {
+            core: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/ffmpeg-core',
+        }
     ];
     
     /**
-     * Загружает FFmpeg с поддержкой fallback для multiple CDN
-     * Работает когда FFmpeg загружен как UMD модуль (глобальная переменная)
-     * @returns {Promise<Object|null>} FFmpeg экземпляр или null если не удалось
+     * Загружает FFmpeg WebAssembly - работает в Chrome, Firefox, Safari, Edge
+     * @returns {Promise<Object>} FFmpeg экземпляр
      */
     async function getFFmpegInstance() {
         // Если уже загружена - вернуть сразу
@@ -463,72 +463,70 @@
         window.ffmpegLoading = true;
         
         try {
-            // Проверить загрузилась ли FFmpeg библиотека вообще
+            // Проверить загрузилась ли ffmpeg.wasm библиотека
             if (!window.FFmpeg) {
-                throw new Error('FFmpeg.js модуль не загружен (глобальный объект window.FFmpeg недоступен)');
+                throw new Error('ffmpeg.wasm модуль не загружен');
             }
             
-            const FFmpeg = window.FFmpeg.FFmpeg;
-            const fetchFile = window.FFmpeg.fetchFile;
+            const { FFmpeg, fetchFile } = window.FFmpeg;
             
-            if (!FFmpeg || !fetchFile) {
-                throw new Error('FFmpeg.FFmpeg класс или fetchFile функция недоступны');
+            if (!FFmpeg) {
+                throw new Error('FFmpeg класс недоступен из ffmpeg.wasm');
             }
             
-            console.log('[FFmpeg] ⏳ Инициализация FFmpeg...');
+            console.log('[FFmpeg] 🔧 Инициализация ffmpeg.wasm version 0.12.10...');
             const ffmpeg = new FFmpeg();
             
             // Обработка логов
             ffmpeg.on('log', ({ type, message }) => {
-                if (type === 'fferror' || type === 'error') {
-                    console.warn(`[FFmpeg ERROR]: ${message}`);
-                } else {
-                    console.log(`[FFmpeg ${type}]: ${message}`);
+                if (type === 'fferror') {
+                    console.warn(`[FFmpeg]: ${message}`);
+                } else if (message && message.length > 0) {
+                    console.log(`[FFmpeg]: ${message}`);
                 }
             });
             
-            console.log('[FFmpeg] 🔧 Попытка загрузки с разных источников...');
+            console.log('[FFmpeg] 📍 Загрузка ffmpeg-core WASM...');
             
-            // Попробовать загрузить с первого доступного CDN
+            // Попробовать загрузить с первого доступного источника
             let loadedSuccessfully = false;
             let lastError = null;
             
-            for (let coreUrlBase of FFMPEG_CORE_URLS) {
+            for (let source of FFMPEG_CORE_URLS) {
                 try {
-                    console.log(`[FFmpeg] 📍 Источник: ${coreUrlBase}`);
+                    console.log(`[FFmpeg] 📍 Источник: ${source.core}`);
                     
+                    // Загрузить ffmpeg-core с явной конфигурацией
                     await ffmpeg.load({
-                        coreURL: `${coreUrlBase}/ffmpeg-core.js`,
-                        wasmURL: `${coreUrlBase}/ffmpeg-core.wasm`
+                        coreURL: source.core,
+                        wasmURL: source.core
                     });
                     
-                    console.log(`[FFmpeg] ✓ Успешно загружена с: ${coreUrlBase}`);
+                    console.log(`[FFmpeg] ✓ Успешно загружена с: ${source.core}`);
                     loadedSuccessfully = true;
                     break;
                 } catch (err) {
-                    console.warn(`[FFmpeg] ✗ Не удалось загрузить с ${coreUrlBase}: ${err.message}`);
+                    console.warn(`[FFmpeg] ✗ Ошибка загрузки: ${err.message}`);
                     lastError = err;
-                    // Продолжить со следующего CDN
                 }
             }
             
             if (!loadedSuccessfully) {
-                throw new Error(`FFmpeg не загружена ни с одного CDN. Последняя ошибка: ${lastError ? lastError.message : 'Unknown'}`);
+                throw new Error(`Не удалось загрузить ffmpeg-core. Ошибка: ${lastError?.message || 'Unknown'}`);
             }
             
-            // Проверить что FFmpeg реально загружена
-            const isLoaded = typeof ffmpeg.isLoaded === 'function' ? ffmpeg.isLoaded() : !!ffmpeg.FS;
-            if (!isLoaded) {
-                throw new Error('FFmpeg загружена но не инициализирована (FS недоступен)');
+            // Проверить что FFmpeg готова
+            if (!ffmpeg.FS) {
+                throw new Error('FFmpeg загружена но FS недоступна');
             }
             
-            // Кэшировать для последующего использования
+            // Кэшировать экземпляр
             window.ffmpegInstance = ffmpeg;
             window.ffmpegReady = true;
             window.FFmpegFetchFile = fetchFile;
             window.ffmpegLoading = false;
             
-            console.log('✅ [FFmpeg] Полностью готова к работе');
+            console.log('✅ [FFmpeg] ffmpeg.wasm полностью готова к конвертации');
             return ffmpeg;
             
         } catch (err) {
@@ -541,15 +539,15 @@
     }
     
     /**
-     * Безопасное выполнение FFmpeg команды с обработкой ошибок
+     * Безопасное выполнение FFmpeg команды
      */
     async function executeFFmpegCommand(ffmpeg, command, timeoutMs = 300000) {
         return new Promise((resolve, reject) => {
             const timeoutId = setTimeout(() => {
-                reject(new Error('Превышено время ожидания FFmpeg команды (>5 минут)'));
+                reject(new Error('Превышено время ожидания (>5 минут)'));
             }, timeoutMs);
             
-            ffmpeg.exec(command)
+            ffmpeg.run(...command)
                 .then(result => {
                     clearTimeout(timeoutId);
                     resolve(result);
@@ -1453,8 +1451,8 @@ ${escapeHtml(text)}
                 const fileData = await file.arrayBuffer();
                 const uint8Array = new Uint8Array(fileData);
                 
-                // Записать файл
-                await ffmpeg.writeFile(inputName, uint8Array);
+                // Записать файл в ffmpeg.wasm v0.12.10
+                ffmpeg.FS('writeFile', inputName, uint8Array);
                 filesCreated.push(inputName);
                 console.log(`✓ Файл загружен в виртуальную FS`);
                 
@@ -1482,7 +1480,8 @@ ${escapeHtml(text)}
                 let outputData;
                 
                 try {
-                    outputData = await ffmpeg.readFile(outputName);
+                    outputData = ffmpeg.FS('readFile', outputName);
+                    outputData = new Uint8Array(outputData);
                 } catch (readErr) {
                     // Отладка - просмотреть доступные файлы
                     console.error('❌ Ошибка чтения выходного файла:', readErr);
@@ -1510,7 +1509,7 @@ ${escapeHtml(text)}
                 console.log('🧹 Очистка временных файлов...');
                 for (let fname of filesCreated) {
                     try {
-                        await ffmpeg.deleteFile(fname);
+                        ffmpeg.FS('unlink', fname);
                     } catch (e) {
                         console.warn(`⚠️ Не удалось удалить ${fname}`);
                     }
@@ -1529,7 +1528,7 @@ ${escapeHtml(text)}
                     try {
                         for (let fname of filesCreated) {
                             try {
-                                await ffmpeg.deleteFile(fname);
+                                ffmpeg.FS('unlink', fname);
                             } catch (e) {}
                         }
                     } catch (cleanErr) {
