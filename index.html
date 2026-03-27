@@ -419,64 +419,132 @@
     
     // Проверка что FFmpeg загружена с основного CDN
     console.log('[FFmpeg] Проверка загрузки основного CDN (jsdelivr)...');
-    if (!window.FFmpeg) {
-        console.warn('[FFmpeg] ⏳[Fallback1] Основной CDN (jsdelivr) не загружен. Пробуем unpkg...');
-        var altScript = document.createElement('script');
-        altScript.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js';
-        altScript.crossOrigin = 'anonymous';
-        altScript.timeout = 30000; // 30 сек таймаут
-        
-        var unpkgTimeout = setTimeout(function() {
-            console.warn('[FFmpeg] ❌[Fallback1] unpkg загрузка истекла по времени (30сек)');
-            document.head.removeChild(altScript);
-            // Пробуем третий fallback
-            loadThirdFallback();
-        }, 30000);
-        
-        altScript.onload = function() {
-            clearTimeout(unpkgTimeout);
-            console.log('[FFmpeg] ✓[Fallback1] unpkg загружен успешно');
+    
+    // Ждём немного чтобы дать основному скрипту время загрузиться
+    setTimeout(function() {
+        if (!window.FFmpeg) {
+            console.warn('[FFmpeg] ⏳[Fallback1] Основной CDN (jsdelivr) не загружен. Пробуем unpkg...');
+            var altScript = document.createElement('script');
+            altScript.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js';
+            altScript.crossOrigin = 'anonymous';
+            altScript.timeout = 30000; // 30 сек таймаут
+            
+            var unpkgTimeout = setTimeout(function() {
+                console.warn('[FFmpeg] ❌[Fallback1] unpkg загрузка истекла по времени (30сек)');
+                if (document.head.contains(altScript)) {
+                    document.head.removeChild(altScript);
+                }
+                // Пробуем третий fallback
+                loadThirdFallback();
+            }, 30000);
+            
+            altScript.onload = function() {
+                clearTimeout(unpkgTimeout);
+                // Еще раз проверить что FFmpeg загружена
+                if (window.FFmpeg) {
+                    console.log('[FFmpeg] ✓[Fallback1] unpkg загружен успешно');
+                    window.ffmpegLoaded = true;
+                } else {
+                    console.warn('[FFmpeg] ⚠️[Fallback1] unpkg загружен но FFmpeg не доступна, пробуем esm.sh');
+                    loadThirdFallback();
+                }
+            };
+            altScript.onerror = function(err) {
+                clearTimeout(unpkgTimeout);
+                console.warn('[FFmpeg] ❌[Fallback1] unpkg не загружен: ' + (err?.message || 'error'));
+                // Пробуем третий fallback
+                loadThirdFallback();
+            };
+            document.head.appendChild(altScript);
+        } else {
+            console.log('[FFmpeg] ✓[Initial] FFmpeg скрипт загружен успешно с основного CDN (jsdelivr)');
             window.ffmpegLoaded = true;
-        };
-        altScript.onerror = function(err) {
-            clearTimeout(unpkgTimeout);
-            console.warn('[FFmpeg] ❌[Fallback1] unpkg не загружен: ' + (err?.message || 'error'));
-            // Пробуем третий fallback
-            loadThirdFallback();
-        };
-        document.head.appendChild(altScript);
-    } else {
-        console.log('[FFmpeg] ✓[Initial] FFmpeg скрипт загружен успешно с основного CDN (jsdelivr)');
-        window.ffmpegLoaded = true;
-    }
+        }
+    }, 100); // Даём 100ms для загрузки основного скрипта
     
     // Функция загрузки третьего fallback
     function loadThirdFallback() {
-        console.warn('[FFmpeg] ⏳[Fallback2] Пробуем третий CDN (esm.sh)...');
-        var thirdScript = document.createElement('script');
-        thirdScript.src = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
-        thirdScript.crossOrigin = 'anonymous';
-        thirdScript.type = 'module';
-        thirdScript.timeout = 30000;
+        console.warn('[FFmpeg] ⏳[Fallback2] Пробуем третий CDN (esm.sh с динамическим import)...');
         
-        var esmTimeout = setTimeout(function() {
-            console.error('[FFmpeg] ❌[Fallback2] esm.sh загрузка истекла по времени (30сек)');
-            document.head.removeChild(thirdScript);
-            window.ffmpegLoadFailed = true;
-        }, 30000);
+        // Используем динамический import вместо script tag
+        // esm.sh требует import() для правильной загрузки в глобальное пространство
+        import('https://esm.sh/@ffmpeg/ffmpeg@0.12.10').then(function(module) {
+            console.log('[FFmpeg] ✓[Fallback2-loaded] esm.sh модуль загружен');
+            
+            // Экспортируем в глобальное пространство
+            if (module.FFmpeg) {
+                window.FFmpeg = {
+                    FFmpeg: module.FFmpeg,
+                    fetchFile: module.fetchFile || (async file => {
+                        const data = await fetch(file).then(r => r.arrayBuffer());
+                        return new Uint8Array(data);
+                    })
+                };
+                console.log('[FFmpeg] ✓[Fallback2] esm.sh успешно экспортирован в window.FFmpeg');
+                window.ffmpegLoaded = true;
+            } else {
+                throw new Error('esm.sh загружен но FFmpeg класс не найден');
+            }
+        }).catch(function(err) {
+            console.error('[FFmpeg] ❌[Fallback2] esm.sh import() не сработал: ' + err.message);
+            // Пробуем альтернативный URL формат
+            loadFourthFallback();
+        });
         
-        thirdScript.onload = function() {
-            clearTimeout(esmTimeout);
-            console.log('[FFmpeg] ✓[Fallback2] esm.sh загружен успешно');
-            window.ffmpegLoaded = true;
-        };
-        thirdScript.onerror = function(err) {
-            clearTimeout(esmTimeout);
-            console.error('[FFmpeg] ❌❌❌[Fallback2] ВСЕ CDN НЕ ЗАГРУЖЕНЫ - сеть заблокирована (ИСПОЛЬЗУЙТЕ VPN)', err?.message);
-            window.ffmpegLoadFailed = true;
-        };
-        document.head.appendChild(thirdScript);
+        // Таймаут на загрузку import
+        setTimeout(function() {
+            if (!window.FFmpeg) {
+                console.warn('[FFmpeg] ⏳[Fallback2] esm.sh загрузка истекла по времени, пробуем четвёртый CDN...');
+                loadFourthFallback();
+            }
+        }, 15000);
     }
+    
+    // Четвёртый fallback - cloudflare workers или другой источник
+    function loadFourthFallback() {
+        console.warn('[FFmpeg] ⏳[Fallback3] Пробуем четвёртый CDN (jsdelivr ES модуль)...');
+        
+        // Попробуем ES модуль версию на jsdelivr, которая может быть более совместима
+        import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm').then(function(module) {
+            console.log('[FFmpeg] ✓[Fallback3] jsdelivr ES модуль загружен');
+            
+            if (module.FFmpeg) {
+                window.FFmpeg = {
+                    FFmpeg: module.FFmpeg,
+                    fetchFile: module.fetchFile || (async file => {
+                        const data = await fetch(file).then(r => r.arrayBuffer());
+                        return new Uint8Array(data);
+                    })
+                };
+                console.log('[FFmpeg] ✓[Fallback3] FFmpeg успешно экспортирован');
+                window.ffmpegLoaded = true;
+            }
+        }).catch(function(err) {
+            console.error('[FFmpeg] ❌[Fallback3] jsdelivr ES модуль не загружен: ' + err.message);
+            console.error('[FFmpeg] ❌❌❌ ВСЕ CDN НЕ ЗАГРУЖЕНЫ - сеть заблокирована (ИСПОЛЬЗУЙТЕ VPN)');
+            window.ffmpegLoadFailed = true;
+        });
+    }
+    
+    // Периодическая проверка наличия window.FFmpeg (фоновый мониторинг)
+    // Это поможет обнаружить когда FFmpeg загружается через fallback
+    var ffmpegCheckInterval = setInterval(function() {
+        if (window.FFmpeg && !window.ffmpegLoaded) {
+            console.log('[FFmpeg] 🔍 Обнаружена window.FFmpeg! (загружена через fallback или основной CDN)');
+            window.ffmpegLoaded = true;
+            clearInterval(ffmpegCheckInterval);
+        }
+    }, 500);
+    
+    // Остановить проверку через 60 сек если FFmpeg все еще не загружена
+    setTimeout(function() {
+        if (ffmpegCheckInterval) {
+            clearInterval(ffmpegCheckInterval);
+        }
+        if (!window.FFmpeg) {
+            console.error('[FFmpeg] ❌ Мониторинг остановлен - FFmpeg так и не загружена через 60сек');
+        }
+    }, 60000);
 </script>
 
 <script>
