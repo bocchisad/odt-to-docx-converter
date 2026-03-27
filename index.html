@@ -418,36 +418,64 @@
     window.ffmpegLoadFailed = false;
     
     // Проверка что FFmpeg загружена с основного CDN
+    console.log('[FFmpeg] Проверка загрузки основного CDN (jsdelivr)...');
     if (!window.FFmpeg) {
-        console.warn('[FFmpeg] ⏳[Fallback1] Основной CDN (jsdelivr) не загружен за первую попытку. Пробуем unpkg...');
+        console.warn('[FFmpeg] ⏳[Fallback1] Основной CDN (jsdelivr) не загружен. Пробуем unpkg...');
         var altScript = document.createElement('script');
         altScript.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js';
         altScript.crossOrigin = 'anonymous';
+        altScript.timeout = 30000; // 30 сек таймаут
+        
+        var unpkgTimeout = setTimeout(function() {
+            console.warn('[FFmpeg] ❌[Fallback1] unpkg загрузка истекла по времени (30сек)');
+            document.head.removeChild(altScript);
+            // Пробуем третий fallback
+            loadThirdFallback();
+        }, 30000);
+        
         altScript.onload = function() {
-            console.log('[FFmpeg] ✓[Fallback1] Альтернативный CDN (unpkg) загружен успешно');
+            clearTimeout(unpkgTimeout);
+            console.log('[FFmpeg] ✓[Fallback1] unpkg загружен успешно');
             window.ffmpegLoaded = true;
         };
-        altScript.onerror = function() {
-            console.warn('[FFmpeg] ❌[Fallback1] unpkg также не загружен. Пробуем esm.sh...');
-            // Третий fallback
-            var thirdScript = document.createElement('script');
-            thirdScript.src = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
-            thirdScript.crossOrigin = 'anonymous';
-            thirdScript.type = 'module';
-            thirdScript.onload = function() {
-                console.log('[FFmpeg] ✓[Fallback2] esm.sh загружен успешно');
-                window.ffmpegLoaded = true;
-            };
-            thirdScript.onerror = function() {
-                console.error('[FFmpeg] ❌❌❌[Fallback2] ВСЕ CDN НЕ ЗАГРУЖЕНЫ - сеть заблокирована (ИСПОЛЬЗУЙТЕ VPN)');
-                window.ffmpegLoadFailed = true;
-            };
-            document.head.appendChild(thirdScript);
+        altScript.onerror = function(err) {
+            clearTimeout(unpkgTimeout);
+            console.warn('[FFmpeg] ❌[Fallback1] unpkg не загружен: ' + (err?.message || 'error'));
+            // Пробуем третий fallback
+            loadThirdFallback();
         };
         document.head.appendChild(altScript);
     } else {
         console.log('[FFmpeg] ✓[Initial] FFmpeg скрипт загружен успешно с основного CDN (jsdelivr)');
         window.ffmpegLoaded = true;
+    }
+    
+    // Функция загрузки третьего fallback
+    function loadThirdFallback() {
+        console.warn('[FFmpeg] ⏳[Fallback2] Пробуем третий CDN (esm.sh)...');
+        var thirdScript = document.createElement('script');
+        thirdScript.src = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
+        thirdScript.crossOrigin = 'anonymous';
+        thirdScript.type = 'module';
+        thirdScript.timeout = 30000;
+        
+        var esmTimeout = setTimeout(function() {
+            console.error('[FFmpeg] ❌[Fallback2] esm.sh загрузка истекла по времени (30сек)');
+            document.head.removeChild(thirdScript);
+            window.ffmpegLoadFailed = true;
+        }, 30000);
+        
+        thirdScript.onload = function() {
+            clearTimeout(esmTimeout);
+            console.log('[FFmpeg] ✓[Fallback2] esm.sh загружен успешно');
+            window.ffmpegLoaded = true;
+        };
+        thirdScript.onerror = function(err) {
+            clearTimeout(esmTimeout);
+            console.error('[FFmpeg] ❌❌❌[Fallback2] ВСЕ CDN НЕ ЗАГРУЖЕНЫ - сеть заблокирована (ИСПОЛЬЗУЙТЕ VPN)', err?.message);
+            window.ffmpegLoadFailed = true;
+        };
+        document.head.appendChild(thirdScript);
     }
 </script>
 
@@ -463,11 +491,22 @@
     console.log('='.repeat(60));
     console.log('[0ms] Проверка наличия window.FFmpeg:', typeof window.FFmpeg !== 'undefined' ? '✓ ЗАГРУЖЕНА' : '⏳ Загружается или блокирована');
     console.log('[0ms] Проверка WebAssembly:', typeof WebAssembly !== 'undefined' ? '✓ Поддерживается' : '✗ НЕ поддерживается');
+    console.log('[0ms] Флаги: ffmpegLoaded=' + !!window.ffmpegLoaded + ', ffmpegLoadFailed=' + !!window.ffmpegLoadFailed);
     
     // Проверить что FFmpeg загружается через fallback через 1 сек
     setTimeout(function() {
         console.log('[1000ms] Проверка после 1 секунды:', typeof window.FFmpeg !== 'undefined' ? '✓ ЗАГРУЖЕНА' : '⏳ Все еще загружается...');
+        console.log('[1000ms] Флаги: ffmpegLoaded=' + !!window.ffmpegLoaded + ', ffmpegLoadFailed=' + !!window.ffmpegLoadFailed);
     }, 1000);
+    
+    // Еще одна проверка через 3 сек
+    setTimeout(function() {
+        console.log('[3000ms] Финальная проверка:', typeof window.FFmpeg !== 'undefined' ? '✓ ГОТОВА!' : '⏳ Все еще загружается. Может быть медленная сеть...');
+        if (!window.FFmpeg && window.ffmpegLoadFailed) {
+            console.error('[3000ms] ❌ ВСЕ CDN заблокированы - ИСПОЛЬЗУЙТЕ VPN!');
+        }
+    }, 3000);
+</script>
 </script>
 
 <script>
@@ -527,10 +566,24 @@
     async function getFFmpegInstance() {
         // Сначала подождать пока FFmpeg загрузится через fallback если нужно
         console.log('[FFmpeg] ⏳ Ожидание загрузки FFmpeg скрипта (может быть через fallback CDN)...');
-        let attempts = 0;
-        while (!window.FFmpeg && !window.ffmpegLoadFailed && attempts < 60) {
+        let totalAttempts = 0;
+        const maxAttempts = 120; // 60 сек максимум
+        
+        while (!window.FFmpeg && !window.ffmpegLoadFailed && totalAttempts < maxAttempts) {
+            console.log(`[FFmpeg] ⏳ Попытка ${totalAttempts + 1}/${maxAttempts}: Ожидание загрузки...`);
             await new Promise(resolve => setTimeout(resolve, 500));
-            attempts++;
+            totalAttempts++;
+        }
+        
+        // Проверка результата
+        if (window.ffmpegLoadFailed) {
+            console.error('[FFmpeg] ❌ Загрузка FFmpeg отказала - ВСЕ CDN заблокированы');
+            throw new Error('FFmpeg скрипт не загружен. Все CDN заблокированы. Используйте VPN!');
+        }
+        
+        if (!window.FFmpeg && totalAttempts >= maxAttempts) {
+            console.error(`[FFmpeg] ❌ Превышено время ожидания (${maxAttempts * 500}мс) - FFmpeg не загружена`);
+            throw new Error('FFmpeg не загружена даже после ожидания 60 сек. CDN может быть заблокирован.');
         }
         
         // Проверка если ВСЕ CDN заблокированы
@@ -2021,6 +2074,17 @@ ${escapeHtml(text)}
         setTimeout(() => {
             checkLibraries();
         }, 1000);
+        
+        // 🔄 ПРЕДВАРИТЕЛЬНАЯ ЗАГРУЗКА FFmpeg в фоне при открытии приложения
+        console.log('🔄 Предварительная загрузка FFmpeg...');
+        (async function() {
+            try {
+                await getFFmpegInstance();
+                console.log('✓ FFmpeg предварительно загружена в фоне');
+            } catch (err) {
+                console.warn('⚠️ FFmpeg фоновая загрузка: ошибка (попытается при использовании):', err.message);
+            }
+        })();
     })();
 </script>
 </body>
